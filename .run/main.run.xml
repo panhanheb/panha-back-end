@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="main" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <module name="panha-back-end" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="org.example.panhabackend.PanhaBackEndApplication" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
