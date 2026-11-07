@@ -1,0 +1,13 @@
+package org.example.panhabackend.dto.subject;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record SubjectRequest(
+        @NotBlank @Size(max = 20) String code,
+        @NotBlank @Size(max = 100) String name,
+        @Size(max = 500) String description,
+        @Min(0) @Max(20) Integer credits) {
+}
