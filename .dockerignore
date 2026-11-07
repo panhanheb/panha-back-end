@@ -1,0 +1,8 @@
+target/
+.idea/
+.vscode/
+.github/
+*.iml
+.env
+postman/
+docs/
