@@ -1,7 +1,6 @@
 # E-Commerce Backend: Phase 1 Requirements and System Design
 
-Status: **Phase 1 complete**: decisions D1, D2, D3 and D5 are settled (section 10). Nothing in this document is
-implemented yet. Phase 2 starts on approval.
+Status: **Phase 4 complete** (reports at the end). Phase 3 (full schema) is now delivered incrementally: each module adds its own Flyway migration when it is built (V2 = refresh tokens).
 
 ---
 
@@ -39,12 +38,12 @@ replaces the rest. The current database has no production data, so the schema st
 | Security | Spring Security, JWT access tokens (jjwt), refresh tokens stored hashed in the database, BCrypt | |
 | Rate limiting | Bucket4j with Redis | Per IP and per account on sensitive endpoints |
 | Cache | Redis (Spring Cache) | Catalog reads, category tree, coupon lookups |
-| Object storage | S3 API (AWS S3 in production, MinIO in Docker Compose) | Pre-signed upload URLs; the API never streams image bytes |
+| Object storage | S3 API (AWS S3 in production, RustFS in Docker Compose; MinIO stopped publishing Docker images) | Pre-signed upload URLs; the API never streams image bytes |
 | Mapping | MapStruct | Entity to DTO |
 | API docs | springdoc-openapi (Swagger UI) | Per-module tags, bearer-auth scheme, error examples |
-| Tests | JUnit 5, Mockito, Testcontainers (PostgreSQL, Redis, MinIO) | Docker Desktop is installed on the dev machine |
+| Tests | JUnit 5, Mockito, Testcontainers (PostgreSQL, Redis) | Docker Desktop is installed on the dev machine |
 | Observability | Actuator (health, info, metrics, Prometheus), SLF4J / Logback with a request-id in every log line | |
-| Packaging | Dockerfile (layered jar, non-root) and Docker Compose (API, PostgreSQL, Redis, MinIO) | |
+| Packaging | Dockerfile (layered jar, non-root) and Docker Compose (API, PostgreSQL, Redis, RustFS) | |
 
 ---
 
@@ -140,7 +139,7 @@ which transitions are allowed).
 
 | Token | Format | Lifetime | Storage |
 |-------|--------|----------|---------|
-| Access | JWT (HS256), claims: `sub` user id, `roles`, `ver` token version, `jti` | 15 min | Client memory |
+| Access | JWT (HMAC-SHA, strength from the key length), claims: `sub` user id, `roles`, `ver` token version, `jti` | 15 min | Client memory |
 | Refresh | Opaque 256-bit random string | 30 days, rotated on every use | SHA-256 hash in `refresh_tokens` |
 
 * **Rotation with reuse detection.** Each refresh issues a new pair and marks the old refresh token
@@ -664,9 +663,9 @@ Then I stop for your review before the next phase.
 
 | Phase | Delivers | Done when |
 |-------|----------|-----------|
-| 2 Project setup | Package layout, PostgreSQL + Flyway baseline, Redis, MinIO, Docker Compose, `ApiResponse` / errors, OpenAPI, Testcontainers base test, Modulith verification. **Removes the Thymeleaf web layer.** | App starts against Compose; health green; architecture test passes |
+| 2 Project setup ✅ | Package layout, PostgreSQL + Flyway baseline, Redis, S3 storage (RustFS), Docker Compose, `ApiResponse` / errors, OpenAPI, Testcontainers base test, Modulith verification. **Removes the Thymeleaf web layer.** | App starts against Compose; health green; architecture test passes |
 | 3 Database | Flyway `V1` with the full schema above, seed roles and super admin | `ddl-auto=validate` passes; migration test on a clean container |
-| 4 Auth | Register, login, refresh rotation with reuse detection, logout, password reset, rate limits, RBAC | Token, refresh-reuse and 401/403/429 tests pass |
+| 4 Auth ✅ | Register, login, refresh rotation with reuse detection, logout, password reset, rate limits, RBAC | Token, refresh-reuse and 401/403/429 tests pass |
 | 5 Users and customers | Profile, addresses, admin user management, seller onboarding | |
 | 6 Catalog | Categories tree, brands, attributes, products, variants, images (pre-signed S3), search and filters, caching | |
 | 7 Inventory | Adjustments, movements, low-stock, reservation service | Concurrent-checkout test: 50 parallel buyers for 10 units sell exactly 10 |
@@ -689,3 +688,78 @@ Then I stop for your review before the next phase.
 | D3 | Single shop or marketplace with independent sellers | **Decided: marketplace-ready.** Sellers own products and see only their order lines. Orders are not split into sub-orders until it is needed. |
 | D4 | Real payment provider for Phase 10 | Open until Phase 10. Options: Stripe (international cards) or ABA PayWay / Bakong KHQR (local Cambodian payments). The simulated gateway is built first in either case. |
 | D5 | MySQL support | **Dropped:** PostgreSQL only, as in the brief. Flyway scripts and full-text search are PostgreSQL-specific. |
+| D6 | Package layout | **Decided (after Phase 4): layered Spring MVC** (`controller`, `service`, `repository`, `model`, `dto`, ...) instead of one package per module. Section 3 describes the original modular plan; module boundaries are no longer enforced by a test (Spring Modulith removed), so keeping services independent is now a code-review rule. |
+
+---
+
+## Phase 2 report (project setup)
+
+**Delivered**
+
+* Package `com.example.ecommerce` with `common/` (config, exception, response, security, persistence) and
+  one folder per module under `modules/`. The empty modules (customer, inventory, payment, promotion,
+  delivery) exist as declared modules so their boundaries are enforced from the start.
+* PostgreSQL only, schema owned by Flyway (`db/migration/V1__baseline.sql`), Hibernate in `validate` mode.
+* Redis (Spring Cache configured; caches arrive with the catalog in Phase 6).
+* S3 storage client (AWS SDK v2) with pre-signer; RustFS in Docker Compose. MinIO stopped publishing
+  Docker images in 2025, so RustFS (Apache-2.0, S3-compatible) replaces it locally. The code only uses the
+  S3 API, so AWS S3 in production needs only configuration.
+* Response envelope `ApiResponse`, `PageResponse`, stable `ErrorCode`s, global JSON exception handling,
+  JSON 401/403 from the security layer, money serialised as strings.
+* Stateless security skeleton with CORS. Only health, info and the API docs are public until Phase 4 adds JWT.
+* Swagger UI with the bearer-token scheme; MapStruct and Spring Modulith wired into the build.
+* `application.yml` with `dev`, `test` and `prod` profiles; Docker Compose with PostgreSQL 17, Redis 7.4,
+  RustFS and the API (container `nhacg1`).
+* The Thymeleaf pages, MySQL scripts and H2 were removed (decisions D2, D5).
+
+**Verified**
+
+* `./mvnw test`: 13 tests green on real PostgreSQL 17 and Redis containers (Testcontainers):
+  * startup with Flyway and schema validation, seeded roles and admin
+  * health and readiness, OpenAPI document
+  * 401 error envelope, CORS allowed and rejected origins
+  * Redis cache round trip, money as string
+  * checkout with row locks, stock return, payment and the new error codes (`PAYMENT_DECLINED`, `INSUFFICIENT_STOCK`)
+  * module detection and boundaries
+* `docker compose up -d --build`: all four containers healthy, migration applied, storage bucket created,
+  `/actuator/health` UP, Swagger UI served, unauthenticated API call answered with the JSON envelope.
+
+**Known and accepted**
+
+* The services carried over from the first version (auth, user, category, product, cart, order, audit) still
+  reach into each other's entities and repositories: 205 boundary violations. `ModularityTest` fails if the
+  number grows or if `common` gains any dependency on a module. The count goes down as each module is
+  rewritten (Phases 4-11) and must reach 0.
+* These services have no HTTP endpoints yet; they come back as `/api/v1` controllers module by module.
+
+---
+
+## Phase 4 report (authentication and authorization)
+
+**Delivered**
+
+* `/api/v1/auth`: register, login, refresh, logout, logout-all, me, change password, forgot / reset
+  password. Examples in [docs/api/auth.md](api/auth.md), Swagger tag "1. Auth".
+* JWT access tokens (15 min) with user id, username, roles and session version; checked on every request
+  against `users.token_version` (one primary-key lookup; Redis caching left for Phase 13).
+* Opaque refresh tokens (30 days), stored as SHA-256 hashes (`V2__refresh_tokens.sql`), rotated on every
+  use, with reuse detection that ends the whole sign-in, and a nightly cleanup of expired tokens.
+* Five roles (SUPER_ADMIN > ADMIN through a role hierarchy, SELLER, DELIVERY, CUSTOMER); the bootstrap
+  admin is SUPER_ADMIN. `/api/v1/admin/**` needs ADMIN.
+* Rate limits per client IP in Redis (fixed window, Lua script) on the public auth endpoints, 429 with
+  `Retry-After`; fails open if Redis is down. A Redis counter was chosen over Bucket4j: same behaviour for
+  these simple limits, no extra dependency.
+* New error codes: `TOKEN_EXPIRED`, `INVALID_TOKEN`, `REFRESH_TOKEN_REUSED`.
+* Passwords are checked only in the user module (`UserAccountService`); the auth module never sees a hash.
+  Unknown logins cost the same BCrypt time as wrong passwords.
+
+**Verified**
+
+* `./mvnw clean test`: 30 tests green.
+  * `AuthApiIntegrationTest` (13): sign-up, validation, login by username and e-mail, wrong passwords, the
+    super-admin roles, 401 and 403, rotation and reuse detection, an expired access token sent along with a
+    refresh, logout, logout-all across devices, password change, single-use reset tokens, rate limiting.
+  * `JwtServiceTest` (4): claims round trip, expiry with clock skew, forged and foreign tokens, weak keys.
+* Upgrade of an existing database (V1 → V2, existing admin promoted to SUPER_ADMIN) checked against the
+  Docker Compose PostgreSQL, followed by a real login and `/me`.
+* Module boundary violations: 205 → 147. `auth` and `common` have none, and the test keeps it that way.

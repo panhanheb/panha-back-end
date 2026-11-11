@@ -8,11 +8,11 @@ spring:
   profiles:
     default: dev
 
-  # ---------- PostgreSQL ----------
+  # ---------- PostgreSQL (defaults = the docker compose container published on localhost:5433) ----------
   datasource:
-    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ecommerce_db}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:postgres}
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5433}/${DB_NAME:ecommerce_db}
+    username: ${DB_USERNAME:ecommerce}
+    password: ${DB_PASSWORD:ecommerce-local}
     hikari:
       pool-name: EcommerceHikariPool
       maximum-pool-size: ${DB_POOL_SIZE:10}
@@ -40,8 +40,11 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:}
+      password: ${REDIS_PASSWORD:redis-local}
       timeout: 2s
+      # Redis is only a cache here; all repositories are JPA
+      repositories:
+        enabled: false
     web:
       pageable:
         default-page-size: 20
@@ -51,9 +54,6 @@ spring:
 
   jackson:
     time-zone: UTC
-
-  modulith:
-    detection-strategy: com.example.ecommerce.common.config.ModuleDetection
 
 server:
   port: ${SERVER_PORT:8080}
@@ -83,6 +83,20 @@ springdoc:
 
 # ---------- Application ----------
 app:
+  jwt:
+    # Base64 HMAC key, at least 256 bits. Generate: openssl rand -base64 64. The default is for development only.
+    secret: ${JWT_SECRET:ZGV2LW9ubHktZWNvbW1lcmNlLWp3dC1zZWNyZXQtY2hhbmdlLW1lLWluLWV2ZXJ5LXJlYWwtZW52aXJvbm1lbnQ=}
+    issuer: ecommerce-backend
+    access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
+    refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:30d}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    rules:
+      login: { limit: 10, window: 1m }
+      register: { limit: 5, window: 1m }
+      refresh: { limit: 30, window: 1m }
+      forgot-password: { limit: 3, window: 1m }
+      reset-password: { limit: 5, window: 1m }
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:4200}
   shop:
@@ -93,12 +107,13 @@ app:
   storage:
     bucket: ${S3_BUCKET:ecommerce-media}
     region: ${S3_REGION:us-east-1}
-    # Empty for AWS S3. MinIO locally: http://localhost:9000
+    # Empty for AWS S3. Local S3-compatible server (RustFS in Docker Compose): http://localhost:9000
     endpoint: ${S3_ENDPOINT:http://localhost:9000}
-    access-key: ${S3_ACCESS_KEY:minioadmin}
-    secret-key: ${S3_SECRET_KEY:minioadmin}
+    access-key: ${S3_ACCESS_KEY:ecommerce}
+    secret-key: ${S3_SECRET_KEY:ecommerce-local-secret}
     public-base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/ecommerce-media}
     path-style: ${S3_PATH_STYLE:true}
+    create-bucket: ${S3_CREATE_BUCKET:true}
   password-reset:
     token-expiration-minutes: 30
     reset-url: ${PASSWORD_RESET_URL:http://localhost:3000/reset-password}
@@ -126,6 +141,24 @@ logging:
     com.example.ecommerce: DEBUG
 
 ---
+# Automated tests: PostgreSQL and Redis come from Testcontainers; no object storage is started
+spring:
+  config:
+    activate:
+      on-profile: test
+app:
+  storage:
+    create-bucket: false
+  # Tests sign in many times from the same address; the forgot-password limit stays real for the 429 test
+  rate-limit:
+    rules:
+      login: { limit: 1000, window: 1m }
+      register: { limit: 1000, window: 1m }
+      refresh: { limit: 1000, window: 1m }
+      forgot-password: { limit: 3, window: 1m }
+      reset-password: { limit: 1000, window: 1m }
+
+---
 # Production: every secret must come from the environment (no defaults)
 spring:
   config:
@@ -147,6 +180,8 @@ springdoc:
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
 app:
+  jwt:
+    secret: ${JWT_SECRET}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   storage:
@@ -155,5 +190,6 @@ app:
     secret-key: ${S3_SECRET_KEY:}
     public-base-url: ${S3_PUBLIC_BASE_URL}
     path-style: ${S3_PATH_STYLE:false}
+    create-bucket: ${S3_CREATE_BUCKET:false}
   bootstrap:
     admin-password: ${ADMIN_PASSWORD}

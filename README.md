@@ -1,172 +1,144 @@
-# Panha Shop (Spring Boot MVC)
+# E-Commerce Backend API
 
-A server-rendered online store. Customers sign up, browse products, fill a cart, check out, pay (simulated) and
-track their orders. Administrators manage the catalog, fulfil orders and manage accounts in a back office.
+REST API (`/api/v1`) for a Flutter mobile app, a web storefront and an admin dashboard. It is built as a
+layered Spring MVC application with Java 21, Spring Boot 4.1, PostgreSQL, Redis and S3 storage.
+
+**Status:** under construction, phase by phase. See [docs/DESIGN.md](docs/DESIGN.md) for the design, the
+ERD, the delivery plan and the report of each finished phase. Phases 1, 2 and 4 are complete: setup and
+authentication ([Auth API](docs/api/auth.md)). Catalog, cart and order endpoints follow phase by phase.
 
 | | |
 |---|---|
-| **Stack** | Java 21, Spring Boot 4.1 (Web MVC, Thymeleaf, Data JPA, Security, Validation, Actuator), Lombok, Maven |
-| **Database** | MySQL 8 (PostgreSQL optional for local development, H2 for automated tests) |
-| **Sign-in** | Form login with server sessions, BCrypt passwords, CSRF protection, roles `ADMIN` and `CUSTOMER` |
-| **Payments** | Simulated (no external gateway): card, bank transfer, cash on delivery |
+| **Stack** | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Security, Validation, Actuator, Cache), Maven wrapper |
+| **Data** | PostgreSQL 17 with Flyway migrations, Redis 7.4, S3-compatible storage (AWS S3 / RustFS) |
+| **Quality** | JUnit 5, Mockito, Testcontainers |
+| **Docs** | Swagger UI at `/swagger-ui.html`, OpenAPI JSON at `/v3/api-docs` |
 
 ---
 
-## Quick start (local)
+## Run it
 
-**Prerequisites:** JDK 21 and MySQL 8 on `localhost:3306`. Maven is not required; use the wrapper.
+**Prerequisites:** JDK 21 and Docker Desktop (running).
+
+### Everything in Docker
 
 ```bash
-./mvnw spring-boot:run                      # Windows: mvnw.cmd spring-boot:run
-# DB credentials other than root/root:
-DB_USERNAME=me DB_PASSWORD=secret ./mvnw spring-boot:run
+docker compose up -d --build
+docker compose logs -f api
 ```
 
-Open <http://localhost:8080>.
+| Service | Address |
+|---------|---------|
+| API | <http://localhost:8080> |
+| Swagger UI | <http://localhost:8080/swagger-ui.html> |
+| Health | <http://localhost:8080/actuator/health> |
+| Storage console (RustFS) | <http://localhost:9001> (user `ecommerce`, password `ecommerce-local-secret`) |
 
-* First start creates the roles and an administrator: **`admin` / `Admin@123`**. Sign in and change it under
-  **My account**.
-* Customers create their own accounts with **Create account**.
-* Optional demo catalog (3 categories, 8 products): run `src/main/resources/db/sample-data.sql` after the first start.
+The defaults in `docker-compose.yml` are for local use only. For anything else, copy `.env.example` to
+`.env` and set real passwords. Stop the stack with `docker compose down`; add `-v` to also delete its data.
 
-**PostgreSQL instead of MySQL:** create the database once with `psql -U postgres -c "CREATE DATABASE ecommerce_db"`,
-then run with the `dev,postgres` profiles and your password, e.g.
-`SPRING_PROFILES_ACTIVE=dev,postgres DB_PASSWORD=yourpass ./mvnw spring-boot:run`. The IntelliJ run configuration
-`main` already uses these profiles.
+### API from the IDE, infrastructure in Docker
+
+```bash
+docker compose up -d postgres redis storage
+./mvnw spring-boot:run          # Windows: mvnw.cmd spring-boot:run   (dev profile)
+```
+
+In IntelliJ, use the **main** run configuration. The `dev` defaults point to the containers: PostgreSQL on
+`localhost:5433` and Redis on `localhost:6379`, both published on localhost only.
+
+The first start applies the Flyway migrations and creates the roles and an administrator
+(`admin` / `Admin@123`, from `ADMIN_*`).
 
 ---
 
-## Pages
-
-| Who | Page | URL |
-|-----|------|-----|
-| Everyone | Product list with search, category, price and stock filters, sorting | `/`, `/products` |
-| Everyone | Product details | `/products/{id}` |
-| Everyone | Sign in, create account, forgot / reset password | `/login`, `/register`, `/forgot-password`, `/reset-password?token=` |
-| Signed in | Profile and password change | `/account` |
-| Customer | Cart (change quantities, remove, empty) | `/cart` |
-| Customer | Checkout (delivery address, payment method) | `/checkout` |
-| Customer | My orders, order details, payment, cancellation | `/orders`, `/orders/{id}` |
-| Admin | Orders: search, ship, deliver, cancel | `/admin/orders` |
-| Admin | Products: create, edit, hide, restock, delete | `/admin/products` |
-| Admin | Categories | `/admin/categories` |
-| Admin | Users: enable/disable, roles, password reset, delete | `/admin/users` |
-| Admin | Audit log | `/admin/audit-logs` |
-
-### Order lifecycle
-
-```
-            pay (customer)           ship (admin)            deliver (admin)
-PENDING ─────────────────────► PAID ───────────────► SHIPPED ─────────────────► DELIVERED
-   │  └──────── ship (admin, cash on delivery only) ────►┘   (COD is marked PAID on delivery)
-   │                            │
-   └──── cancel (customer or admin) ───► CANCELLED   (stock restored; PAID orders become REFUNDED)
-```
-
-* Checkout reserves stock immediately. Cancelling returns it.
-* Simulated card payment: any 12-19 digit number succeeds, except `4000 0000 0000 0002`, which is always
-  declined. Card numbers are never stored.
-
----
-
-## Configuration
-
-Settings are in `src/main/resources/application.properties` and can be overridden with environment variables.
-
-| Variable | Default | Purpose |
-|----------|---------|---------|
-| `DB_HOST`, `DB_PORT`, `DB_NAME` | `localhost`, `3306`, `ecommerce_db` | Database location |
-| `DB_USERNAME`, `DB_PASSWORD` | `root` / `root` (dev only) | Database credentials |
-| `JPA_DDL_AUTO` | `update` (dev), `validate` (prod) | Hibernate schema mode |
-| `SESSION_TIMEOUT` | `30m` | Idle time before a signed-in session ends |
-| `SESSION_COOKIE_SECURE` | `true` in prod | Send the session cookie over HTTPS only. Set `false` when serving plain HTTP |
-| `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin` / `admin@shop.local` / `Admin@123` | Bootstrap admin (created only if missing) |
-| `PASSWORD_RESET_URL` | `http://localhost:8080/reset-password` | Public address of the reset page, used in reset links |
-| `APP_TIMEZONE` | the server's zone | Store time zone, e.g. `Asia/Phnom_Penh` |
-| `SHOP_CURRENCY` | `USD` | Currency shown on prices |
-| `SHOP_SHIPPING_FEE` | `2.00` | Flat shipping fee per order |
-| `SHOP_FREE_SHIPPING_THRESHOLD` | `50.00` | Subtotal from which shipping is free (`0` = never free) |
-
-Profiles: `dev` (default; template reloading, verbose logging, auto DDL), `prod` (secrets from the environment,
-`validate`, secure cookie, graceful shutdown), `postgres` (local PostgreSQL) and `test` (H2, used by the tests).
-
----
-
-## Project structure (MVC)
-
-```
-src/main/java/org/example/panhabackend
-├── controller/        Controllers: Shop, Auth, Account, Cart, Order, ErrorPage
-│   └── admin/         Back office: AdminOrder, AdminProduct, AdminCategory, AdminUser, AdminAudit
-├── web/               GlobalModelAttributes (header data), FormValidation, ViewFormat (@fmt), Redirects
-│   └── form/          Form-backing objects bound to the HTML forms
-├── service/ + impl/   Business logic (pricing, cart, checkout, payment, fulfilment, accounts, audit)
-├── repository/        Spring Data JPA repositories, ProductSpecifications (product search)
-├── entity/  enums/    JPA entities and enums (the model)
-├── dto/  mapper/      Records passed from services to views, entity -> record mappers
-├── security/          SecurityConfig (form login), LoginSuccessHandler, SessionValidationFilter, UserPrincipal
-├── exception/         Business exceptions, GlobalExceptionHandler (error pages and flash messages)
-└── config/            AppProperties, DataInitializer, RequestLoggingFilter
-src/main/resources
-├── templates/         Thymeleaf views: shop/, auth/, account/, cart/, orders/, admin/, fragments/, error.html
-├── static/css/app.css Stylesheet
-└── db/                schema.sql (MySQL), sample-data.sql
-```
-
-Request flow: a controller reads the request, calls a service, puts the result in the model and returns a
-template name. Form submissions follow Post/Redirect/Get: on success the controller redirects and passes the
-confirmation as a flash message; on invalid input it shows the same form again with the errors next to the fields.
-
----
-
-## Key design decisions
-
-* **No overselling.** Checkout locks the product rows (`SELECT ... FOR UPDATE`, in id order to avoid deadlocks)
-  before reading stock, then deducts it in the same transaction.
-* **All or nothing checkout.** Every cart line is checked before anything is saved; problems are listed together.
-* **Orders are snapshots.** Product name, SKU, unit price and the delivery address are copied into the order.
-* **Concurrent changes.** `orders.version` is an optimistic lock, so a simultaneous pay and cancel cannot both win.
-* **Ownership.** Customers only see their own orders; other order ids show "not found".
-* **Sessions end when the account changes.** Disabling an account, changing its roles or resetting/changing its
-  password ends all of its sessions on their next request (`users.token_version`, `SessionValidationFilter`).
-* **Safe forms.** Every form carries a CSRF token. Input rules are declared once on the service request records
-  and reused by the web forms. Error pages never show stack traces.
-* **History is protected.** Ordered products, users with orders and categories with products cannot be deleted
-  (hide or disable them instead). Every change, payment, sign-in and password event goes to `audit_logs`.
-
----
-
-## Testing
+## Test
 
 ```bash
 ./mvnw test
 ```
 
-`ShopWebFlowTest` drives the real security filter chain, controllers, services and templates on H2: access
-rules and CSRF, sign-up validation, the full card purchase with a declined test card and fulfilment, cash on
-delivery with cancellation and stock return, order ownership, ending sessions of disabled accounts, password
-change, and a check that every page renders.
+Docker must be running. The integration tests start real PostgreSQL and Redis containers.
+
+| Test | Checks |
+|------|--------|
+| `PlatformIntegrationTest` | Flyway + schema validation, seed data, health, OpenAPI, JSON error envelope, CORS, Redis cache, money format |
+| `CheckoutOnPostgresIntegrationTest` | Checkout with row locks, stock reservation and return, payment, error codes |
 
 ---
 
-## Deployment
+## API conventions
 
-### Docker Compose (MySQL and the web app)
+Every response has the same envelope:
 
-```bash
-cp .env.example .env        # set real passwords; SESSION_COOKIE_SECURE=true once served over HTTPS
-docker compose up -d --build
-docker compose logs -f web
+```json
+{ "success": true, "data": { "id": 42 }, "timestamp": "2026-11-11T06:40:48Z" }
 ```
 
-The app container is called `nhacg1`. On the first start of an empty volume MySQL runs `db/schema.sql`, which
-creates `ecommerce_db`; the app starts with `ddl-auto=validate`.
+```json
+{
+  "success": false,
+  "error": { "code": "UNAUTHORIZED", "message": "Authentication is required", "path": "/api/v1/orders", "traceId": "3ed44f28" },
+  "timestamp": "2026-11-11T06:40:48Z"
+}
+```
 
-### Production checklist
+* `error.code` is stable; clients branch on it. The list is in `common/exception/ErrorCode.java`.
+* Money is a string with two decimals (`"19.90"`); times are UTC ISO-8601.
+* Lists take `page`, `size` (max 100) and `sort=field,asc|desc`.
+* Every response carries an `X-Request-Id` header; the same id is in `error.traceId` and in the server logs.
 
-* [ ] Strong DB and admin passwords; change the admin password after the first sign-in.
-* [ ] HTTPS at a reverse proxy (Nginx, a load balancer) forwarding `X-Forwarded-*`; `SESSION_COOKIE_SECURE=true`.
-* [ ] Replace the simulated payment in `OrderServiceImpl#pay` with a real gateway before taking real money.
-* [ ] Replace `LoggingPasswordResetNotifier` with an e-mail sender (for example `spring-boot-starter-mail`).
-* [ ] Regular MySQL backups (`mysqldump`).
-* [ ] Several app instances behind a load balancer need shared sessions (sticky sessions or Spring Session).
+---
+
+## Project structure (layered Spring MVC)
+
+```
+src/main/java/com/example/ecommerce
+├── EcommerceApplication.java
+├── controller/      REST controllers (/api/v1/...): validate input, call one service, wrap the result in ApiResponse
+├── service/         Business logic interfaces (AuthService, UserAccountService, OrderService, ...)
+│   └── impl/        Their implementations; transactions live here
+├── repository/      Spring Data JPA repositories (+ ProductSpecifications for dynamic search)
+├── model/           JPA entities (User, Role, Product, Order, RefreshToken, ...) and BaseEntity
+│   └── enums/       RoleName, OrderStatus, PaymentMethod, PaymentStatus, AuditAction
+├── dto/
+│   ├── request/     Request bodies with Bean Validation rules
+│   └── response/    Response records, ApiResponse / ApiError envelope, PageResponse
+├── mapper/          Entity -> response DTO
+├── security/        SecurityConfig, JWT service and filter, rate limiting, UserPrincipal
+├── config/          AppProperties, Jackson, OpenAPI, Redis cache, S3 storage, request logging, data seeding
+├── exception/       ErrorCode, business exceptions, GlobalExceptionHandler
+└── util/            Shared constants (password rules, cart limits)
+src/main/resources
+├── application.yml  Profiles: dev (default), test, prod
+└── db/migration/    Flyway scripts (V1__baseline.sql, V2__refresh_tokens.sql, ...)
+```
+
+Request flow: `controller` → `service` → `repository` → database; entities (`model`) never leave the
+service layer, controllers only see `dto` records.
+
+---
+
+## Configuration
+
+All settings are in `application.yml` and can be overridden by environment variables:
+
+| Variable | Default (dev) | Purpose |
+|----------|---------------|---------|
+| `DB_HOST`, `DB_PORT`, `DB_NAME` | `localhost`, `5433`, `ecommerce_db` | PostgreSQL |
+| `DB_USERNAME`, `DB_PASSWORD` | `ecommerce` / `ecommerce-local` | PostgreSQL credentials |
+| `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD` | `localhost`, `6379`, `redis-local` | Redis |
+| `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION` | `http://localhost:9000`, `ecommerce-media`, `us-east-1` | Object storage (leave `S3_ENDPOINT` empty for AWS S3) |
+| `S3_ACCESS_KEY`, `S3_SECRET_KEY` | local keys | Storage credentials (AWS: leave empty to use the IAM role) |
+| `S3_PUBLIC_BASE_URL` | `http://localhost:9000/ecommerce-media` | Base URL clients use to load images |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,5173,4200` | Browser origins of the web clients |
+| `JWT_SECRET` | dev key | **Base64 HMAC key, at least 256 bits** (`openssl rand -base64 64`); required in prod |
+| `JWT_ACCESS_TOKEN_TTL`, `JWT_REFRESH_TOKEN_TTL` | `15m`, `30d` | Token lifetimes |
+| `RATE_LIMIT_ENABLED` | `true` | Per-IP limits on the public auth endpoints |
+| `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin` / `admin@shop.local` / `Admin@123` | Bootstrap super administrator |
+| `SHOP_CURRENCY`, `SHOP_SHIPPING_FEE`, `SHOP_FREE_SHIPPING_THRESHOLD` | `USD`, `2.00`, `50.00` | Store settings |
+| `APP_TIMEZONE` | server zone | Store time zone, e.g. `Asia/Phnom_Penh` |
+| `SWAGGER_ENABLED` | on (dev), off (prod) | Expose Swagger UI in production |
+
+The `prod` profile has no defaults for secrets: the database, CORS origins, storage URL and admin password
+must come from the environment.

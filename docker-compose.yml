@@ -1,60 +1,111 @@
-# Production-like stack: MySQL 8 + the shop web application.
-#   cp .env.example .env   (then edit the values)
+# Local / production-like stack: PostgreSQL, Redis, S3-compatible storage (RustFS) and the API.
+#   cp .env.example .env      (change the passwords; the defaults below are for local use only)
 #   docker compose up -d --build
+#   docker compose logs -f api
+# PostgreSQL (5433) and Redis (6379) are published on localhost only, so the API can also run from the IDE:
+#   docker compose up -d postgres redis storage   then run EcommerceApplication with the dev profile.
 services:
-  mysql:
-    image: mysql:8.4
-    container_name: ecommerce-mysql
+  postgres:
+    image: postgres:17-alpine
+    container_name: ecommerce-postgres
     restart: unless-stopped
     environment:
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USERNAME}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-ecommerce_db}
+      POSTGRES_USER: ${DB_USERNAME:-ecommerce}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ecommerce-local}
       TZ: UTC
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     volumes:
-      - mysql-data:/var/lib/mysql
-      # Creates the schema on the first start of an empty volume
-      - ./src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
       timeout: 5s
-      retries: 10
-    # Uncomment to reach MySQL from MySQL Workbench on the host
-    # ports:
-    #   - "3306:3306"
+      retries: 20
+    # For running the API from the IDE: localhost only, 5433 so it does not clash with a local PostgreSQL
+    ports:
+      - "127.0.0.1:5433:5432"
 
-  web:
+  redis:
+    image: redis:7.4-alpine
+    container_name: ecommerce-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-redis-local}"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-local}
+    ports:
+      - "127.0.0.1:6379:6379"
+
+  # S3-compatible object storage for product images. AWS S3 replaces it in production.
+  storage:
+    image: rustfs/rustfs:1.0.3
+    container_name: ecommerce-storage
+    restart: unless-stopped
+    environment:
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-ecommerce}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-ecommerce-local-secret}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+    volumes:
+      - storage-data:/data
+    # Port 9000 must be reachable by clients that load images (S3_PUBLIC_BASE_URL); 9001 is the web console
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  api:
     build: .
     image: nhacg1
     container_name: nhacg1
     restart: unless-stopped
     depends_on:
-      mysql:
+      postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      storage:
+        condition: service_started
     environment:
-      SPRING_PROFILES_ACTIVE: prod
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       APP_TIMEZONE: ${APP_TIMEZONE:-UTC}
-      DB_HOST: mysql
-      DB_PORT: 3306
-      DB_NAME: ${DB_NAME}
-      DB_USERNAME: ${DB_USERNAME}
-      DB_PASSWORD: ${DB_PASSWORD}
-      DB_USE_SSL: "false"
-      DB_ALLOW_PUBLIC_KEY_RETRIEVAL: "true"
-      ADMIN_USERNAME: ${ADMIN_USERNAME}
-      ADMIN_EMAIL: ${ADMIN_EMAIL}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-http://localhost:8080/reset-password}
-      # The session cookie is HTTPS-only in prod. Keep false while the site is served over plain
-      # http://localhost; set true once it sits behind an HTTPS reverse proxy.
-      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-ecommerce_db}
+      DB_USERNAME: ${DB_USERNAME:-ecommerce}
+      DB_PASSWORD: ${DB_PASSWORD:-ecommerce-local}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-local}
+      S3_ENDPOINT: http://storage:9000
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-ecommerce-media}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-ecommerce}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-ecommerce-local-secret}
+      S3_PATH_STYLE: "true"
+      S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000/ecommerce-media}
+      S3_CREATE_BUCKET: "true"
+      # Local default only. Real deployments: openssl rand -base64 64
+      JWT_SECRET: ${JWT_SECRET:-ZGV2LW9ubHktZWNvbW1lcmNlLWp3dC1zZWNyZXQtY2hhbmdlLW1lLWluLWV2ZXJ5LXJlYWwtZW52aXJvbm1lbnQ=}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@shop.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-Admin@123}
+      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-http://localhost:3000/reset-password}
       SHOP_CURRENCY: ${SHOP_CURRENCY:-USD}
       SHOP_SHIPPING_FEE: ${SHOP_SHIPPING_FEE:-2.00}
       SHOP_FREE_SHIPPING_THRESHOLD: ${SHOP_FREE_SHIPPING_THRESHOLD:-50.00}
+      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-true}
     ports:
       - "8080:8080"
+
 volumes:
-  mysql-data:
+  postgres-data:
+  redis-data:
+  storage-data:
