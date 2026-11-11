@@ -1,0 +1,159 @@
+# =====================================================================================================
+# E-Commerce API - configuration. Every value can be overridden with an environment variable.
+# Profiles: dev (default), prod, test (used by the automated tests together with Testcontainers).
+# =====================================================================================================
+spring:
+  application:
+    name: ecommerce-backend
+  profiles:
+    default: dev
+
+  # ---------- PostgreSQL ----------
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:ecommerce_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    hikari:
+      pool-name: EcommerceHikariPool
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      minimum-idle: 2
+
+  # ---------- JPA: the schema belongs to Flyway; Hibernate only checks that entities match it ----------
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+
+  flyway:
+    locations: classpath:db/migration
+    validate-on-migrate: true
+
+  # ---------- Redis ----------
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 2s
+    web:
+      pageable:
+        default-page-size: 20
+        max-page-size: 100
+  cache:
+    type: redis
+
+  jackson:
+    time-zone: UTC
+
+  modulith:
+    detection-strategy: com.example.ecommerce.common.config.ModuleDetection
+
+server:
+  port: ${SERVER_PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+  default-produces-media-type: application/json
+
+# ---------- Application ----------
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:4200}
+  shop:
+    currency: ${SHOP_CURRENCY:USD}
+    shipping-fee: ${SHOP_SHIPPING_FEE:2.00}
+    # Orders with a subtotal at or above this amount ship for free (0 = never free)
+    free-shipping-threshold: ${SHOP_FREE_SHIPPING_THRESHOLD:50.00}
+  storage:
+    bucket: ${S3_BUCKET:ecommerce-media}
+    region: ${S3_REGION:us-east-1}
+    # Empty for AWS S3. MinIO locally: http://localhost:9000
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    access-key: ${S3_ACCESS_KEY:minioadmin}
+    secret-key: ${S3_SECRET_KEY:minioadmin}
+    public-base-url: ${S3_PUBLIC_BASE_URL:http://localhost:9000/ecommerce-media}
+    path-style: ${S3_PATH_STYLE:true}
+  password-reset:
+    token-expiration-minutes: 30
+    reset-url: ${PASSWORD_RESET_URL:http://localhost:3000/reset-password}
+  # Administrator created on first start when none exists
+  bootstrap:
+    admin-username: ${ADMIN_USERNAME:admin}
+    admin-email: ${ADMIN_EMAIL:admin@shop.local}
+    admin-password: ${ADMIN_PASSWORD:Admin@123}
+
+logging:
+  level:
+    root: INFO
+    com.example.ecommerce: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} %5p [%X{requestId:-}] [%15.15t] %-40.40logger{39} : %m%n"
+
+---
+# Development: verbose logging of this application
+spring:
+  config:
+    activate:
+      on-profile: dev
+logging:
+  level:
+    com.example.ecommerce: DEBUG
+
+---
+# Production: every secret must come from the environment (no defaults)
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT:5432}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  devtools:
+    restart:
+      enabled: false
+server:
+  shutdown: graceful
+  forward-headers-strategy: native
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+app:
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS}
+  storage:
+    endpoint: ${S3_ENDPOINT:}
+    access-key: ${S3_ACCESS_KEY:}
+    secret-key: ${S3_SECRET_KEY:}
+    public-base-url: ${S3_PUBLIC_BASE_URL}
+    path-style: ${S3_PATH_STYLE:false}
+  bootstrap:
+    admin-password: ${ADMIN_PASSWORD}
