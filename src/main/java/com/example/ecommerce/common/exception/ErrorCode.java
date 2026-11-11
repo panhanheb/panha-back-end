@@ -14,6 +14,12 @@ public enum ErrorCode {
     UNAUTHORIZED(HttpStatus.UNAUTHORIZED),
     INVALID_CREDENTIALS(HttpStatus.UNAUTHORIZED),
     ACCOUNT_DISABLED(HttpStatus.UNAUTHORIZED),
+    /** The access token has expired: call POST /auth/refresh, then retry. */
+    TOKEN_EXPIRED(HttpStatus.UNAUTHORIZED),
+    /** The token is malformed, forged, or its session was ended (logout-all, password change...). Sign in again. */
+    INVALID_TOKEN(HttpStatus.UNAUTHORIZED),
+    /** A refresh token was used twice; every session of that sign-in was ended. Sign in again. */
+    REFRESH_TOKEN_REUSED(HttpStatus.UNAUTHORIZED),
     FORBIDDEN(HttpStatus.FORBIDDEN),
     NOT_FOUND(HttpStatus.NOT_FOUND),
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED),

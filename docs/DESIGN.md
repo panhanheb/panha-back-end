@@ -1,6 +1,6 @@
 # E-Commerce Backend: Phase 1 Requirements and System Design
 
-Status: **Phase 2 complete** (see "Phase 2 report" at the end). Phase 3 starts on approval.
+Status: **Phase 4 complete** (reports at the end). Phase 3 (full schema) is now delivered incrementally: each module adds its own Flyway migration when it is built (V2 = refresh tokens).
 
 ---
 
@@ -139,7 +139,7 @@ which transitions are allowed).
 
 | Token | Format | Lifetime | Storage |
 |-------|--------|----------|---------|
-| Access | JWT (HS256), claims: `sub` user id, `roles`, `ver` token version, `jti` | 15 min | Client memory |
+| Access | JWT (HMAC-SHA, strength from the key length), claims: `sub` user id, `roles`, `ver` token version, `jti` | 15 min | Client memory |
 | Refresh | Opaque 256-bit random string | 30 days, rotated on every use | SHA-256 hash in `refresh_tokens` |
 
 * **Rotation with reuse detection.** Each refresh issues a new pair and marks the old refresh token
@@ -665,7 +665,7 @@ Then I stop for your review before the next phase.
 |-------|----------|-----------|
 | 2 Project setup ✅ | Package layout, PostgreSQL + Flyway baseline, Redis, S3 storage (RustFS), Docker Compose, `ApiResponse` / errors, OpenAPI, Testcontainers base test, Modulith verification. **Removes the Thymeleaf web layer.** | App starts against Compose; health green; architecture test passes |
 | 3 Database | Flyway `V1` with the full schema above, seed roles and super admin | `ddl-auto=validate` passes; migration test on a clean container |
-| 4 Auth | Register, login, refresh rotation with reuse detection, logout, password reset, rate limits, RBAC | Token, refresh-reuse and 401/403/429 tests pass |
+| 4 Auth ✅ | Register, login, refresh rotation with reuse detection, logout, password reset, rate limits, RBAC | Token, refresh-reuse and 401/403/429 tests pass |
 | 5 Users and customers | Profile, addresses, admin user management, seller onboarding | |
 | 6 Catalog | Categories tree, brands, attributes, products, variants, images (pre-signed S3), search and filters, caching | |
 | 7 Inventory | Adjustments, movements, low-stock, reservation service | Concurrent-checkout test: 50 parallel buyers for 10 units sell exactly 10 |
@@ -730,3 +730,35 @@ Then I stop for your review before the next phase.
   number grows or if `common` gains any dependency on a module. The count goes down as each module is
   rewritten (Phases 4-11) and must reach 0.
 * These services have no HTTP endpoints yet; they come back as `/api/v1` controllers module by module.
+
+---
+
+## Phase 4 report (authentication and authorization)
+
+**Delivered**
+
+* `/api/v1/auth`: register, login, refresh, logout, logout-all, me, change password, forgot / reset
+  password. Examples in [docs/api/auth.md](api/auth.md), Swagger tag "1. Auth".
+* JWT access tokens (15 min) with user id, username, roles and session version; checked on every request
+  against `users.token_version` (one primary-key lookup; Redis caching left for Phase 13).
+* Opaque refresh tokens (30 days), stored as SHA-256 hashes (`V2__refresh_tokens.sql`), rotated on every
+  use, with reuse detection that ends the whole sign-in, and a nightly cleanup of expired tokens.
+* Five roles (SUPER_ADMIN > ADMIN through a role hierarchy, SELLER, DELIVERY, CUSTOMER); the bootstrap
+  admin is SUPER_ADMIN. `/api/v1/admin/**` needs ADMIN.
+* Rate limits per client IP in Redis (fixed window, Lua script) on the public auth endpoints, 429 with
+  `Retry-After`; fails open if Redis is down. A Redis counter was chosen over Bucket4j: same behaviour for
+  these simple limits, no extra dependency.
+* New error codes: `TOKEN_EXPIRED`, `INVALID_TOKEN`, `REFRESH_TOKEN_REUSED`.
+* Passwords are checked only in the user module (`UserAccountService`); the auth module never sees a hash.
+  Unknown logins cost the same BCrypt time as wrong passwords.
+
+**Verified**
+
+* `./mvnw clean test`: 30 tests green.
+  * `AuthApiIntegrationTest` (13): sign-up, validation, login by username and e-mail, wrong passwords, the
+    super-admin roles, 401 and 403, rotation and reuse detection, an expired access token sent along with a
+    refresh, logout, logout-all across devices, password change, single-use reset tokens, rate limiting.
+  * `JwtServiceTest` (4): claims round trip, expiry with clock skew, forged and foreign tokens, weak keys.
+* Upgrade of an existing database (V1 → V2, existing admin promoted to SUPER_ADMIN) checked against the
+  Docker Compose PostgreSQL, followed by a real login and `/me`.
+* Module boundary violations: 205 → 147. `auth` and `common` have none, and the test keeps it that way.

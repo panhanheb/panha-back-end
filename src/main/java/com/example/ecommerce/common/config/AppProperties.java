@@ -10,18 +10,44 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Strongly typed binding of all {@code app.*} properties (see application.yml).
  */
 @Validated
 @ConfigurationProperties(prefix = "app")
-public record AppProperties(@Valid @NotNull Cors cors,
+public record AppProperties(@Valid @NotNull Jwt jwt,
+                            @Valid @NotNull RateLimit rateLimit,
+                            @Valid @NotNull Cors cors,
                             @Valid @NotNull Shop shop,
                             @Valid @NotNull Storage storage,
                             PasswordReset passwordReset,
                             Bootstrap bootstrap) {
+
+    /**
+     * @param secret          Base64 HMAC key of at least 256 bits ({@code openssl rand -base64 64})
+     * @param accessTokenTtl  lifetime of access tokens (short: they cannot be revoked one by one)
+     * @param refreshTokenTtl lifetime of refresh tokens (each use replaces the token)
+     */
+    public record Jwt(@NotBlank String secret,
+                      @NotBlank String issuer,
+                      @NotNull Duration accessTokenTtl,
+                      @NotNull Duration refreshTokenTtl) {
+    }
+
+    /**
+     * Per-client-IP limits on the public auth endpoints, counted in Redis so they hold across instances.
+     *
+     * @param rules limit per rule name: login, register, refresh, forgot-password, reset-password
+     */
+    public record RateLimit(boolean enabled, @NotNull Map<String, Rule> rules) {
+
+        public record Rule(@Min(1) int limit, @NotNull Duration window) {
+        }
+    }
 
     /** Browser origins allowed to call the API (web storefront, admin dashboard). Mobile apps are unaffected. */
     public record Cors(@NotNull List<String> allowedOrigins) {

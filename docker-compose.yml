@@ -91,6 +91,8 @@ services:
       S3_PATH_STYLE: "true"
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:-http://localhost:9000/ecommerce-media}
       S3_CREATE_BUCKET: "true"
+      # Local default only. Real deployments: openssl rand -base64 64
+      JWT_SECRET: ${JWT_SECRET:-ZGV2LW9ubHktZWNvbW1lcmNlLWp3dC1zZWNyZXQtY2hhbmdlLW1lLWluLWV2ZXJ5LXJlYWwtZW52aXJvbm1lbnQ=}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:5173}
       ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@shop.local}

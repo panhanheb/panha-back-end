@@ -1,4 +1,4 @@
-package com.example.ecommerce.modules.auth.dto;
+package com.example.ecommerce.common.security;
 
 /**
  * Central password policy used by every request that sets a password.

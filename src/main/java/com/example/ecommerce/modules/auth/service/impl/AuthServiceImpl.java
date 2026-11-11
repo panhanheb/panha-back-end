@@ -1,42 +1,41 @@
 package com.example.ecommerce.modules.auth.service.impl;
 
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import com.example.ecommerce.common.config.AppProperties;
+import com.example.ecommerce.common.exception.BusinessException;
+import com.example.ecommerce.common.exception.ErrorCode;
+import com.example.ecommerce.common.security.JwtService;
+import com.example.ecommerce.modules.audit.service.AuditAction;
+import com.example.ecommerce.modules.audit.service.AuditService;
+import com.example.ecommerce.modules.auth.dto.AuthResponse;
 import com.example.ecommerce.modules.auth.dto.ChangePasswordRequest;
-import com.example.ecommerce.modules.auth.dto.ForgotPasswordRequest;
+import com.example.ecommerce.modules.auth.dto.LoginRequest;
 import com.example.ecommerce.modules.auth.dto.RegisterRequest;
 import com.example.ecommerce.modules.auth.dto.ResetPasswordRequest;
-import com.example.ecommerce.modules.user.dto.UserResponse;
-import com.example.ecommerce.modules.user.entity.Role;
-import com.example.ecommerce.modules.user.entity.User;
-import com.example.ecommerce.modules.audit.service.AuditAction;
-import com.example.ecommerce.common.security.RoleName;
-import com.example.ecommerce.common.exception.BadRequestException;
-import com.example.ecommerce.common.exception.ConflictException;
-import com.example.ecommerce.common.exception.ErrorCode;
-import com.example.ecommerce.common.exception.ResourceNotFoundException;
-import com.example.ecommerce.modules.user.repository.RoleRepository;
-import com.example.ecommerce.modules.user.repository.UserRepository;
-import com.example.ecommerce.common.security.SecurityUtils;
-import com.example.ecommerce.modules.audit.service.AuditService;
+import com.example.ecommerce.modules.auth.entity.RefreshToken;
+import com.example.ecommerce.modules.auth.repository.RefreshTokenRepository;
 import com.example.ecommerce.modules.auth.service.AuthService;
 import com.example.ecommerce.modules.auth.service.PasswordResetNotifier;
+import com.example.ecommerce.modules.user.dto.AccountView;
+import com.example.ecommerce.modules.user.dto.UserResponse;
+import com.example.ecommerce.modules.user.service.UserAccountService;
 import com.example.ecommerce.modules.user.service.UserService;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.Base64;
-import java.util.HashSet;
 import java.util.HexFormat;
-import java.util.Set;
+import java.util.UUID;
 
 @Slf4j
 @Service
@@ -46,130 +45,170 @@ public class AuthServiceImpl implements AuthService {
     private static final String ENTITY = "User";
     private static final SecureRandom RANDOM = new SecureRandom();
 
-    private final UserRepository userRepository;
-    private final RoleRepository roleRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final UserAccountService userAccountService;
     private final UserService userService;
-    private final AuditService auditService;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final JwtService jwtService;
     private final PasswordResetNotifier passwordResetNotifier;
+    private final AuditService auditService;
     private final AppProperties appProperties;
+    private final Clock clock;
 
     @Override
     @Transactional
-    public UserResponse register(RegisterRequest request) {
-        String username = request.username().trim();
-        String email = request.email().trim().toLowerCase();
-        if (userRepository.existsByUsername(username)) {
-            throw new ConflictException(ErrorCode.DUPLICATE_RESOURCE, "Username '" + username + "' is already taken");
+    public AuthResponse register(RegisterRequest request, ClientInfo client) {
+        AccountView account = userAccountService.registerCustomer(request.username(), request.email(),
+                request.password(), request.fullName(), request.phone());
+        return issueTokens(account, UUID.randomUUID(), client);
+    }
+
+    @Override
+    @Transactional(noRollbackFor = BusinessException.class)
+    public AuthResponse login(LoginRequest request, ClientInfo client) {
+        AccountView account = userAccountService.authenticate(request.login(), request.password());
+        return issueTokens(account, UUID.randomUUID(), client);
+    }
+
+    @Override
+    @Transactional(noRollbackFor = BusinessException.class)
+    public AuthResponse refresh(String refreshToken, ClientInfo client) {
+        Instant now = clock.instant();
+        RefreshToken token = refreshTokenRepository.findByTokenHashForUpdate(sha256(refreshToken))
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN, "Invalid refresh token"));
+
+        if (token.isRevoked()) {
+            if (token.getReplacedById() != null) {
+                // An already-rotated token came back: someone else holds a copy. End the whole sign-in.
+                refreshTokenRepository.revokeFamily(token.getFamilyId(), now);
+                auditService.log(AuditAction.LOGOUT, ENTITY, token.getUserId(),
+                        "Refresh token reuse detected; sign-in ended", token.getUserId(), null);
+                log.warn("Refresh token reuse for user {} (family {}) from {}", token.getUserId(),
+                        token.getFamilyId(), client.ipAddress());
+                throw new BusinessException(ErrorCode.REFRESH_TOKEN_REUSED,
+                        "This refresh token was already used. Please sign in again");
+            }
+            throw new BusinessException(ErrorCode.INVALID_TOKEN, "This session has ended. Please sign in again");
         }
-        if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new ConflictException(ErrorCode.DUPLICATE_RESOURCE, "Email '" + email + "' is already registered");
+        if (!token.getExpiresAt().isAfter(now)) {
+            throw new BusinessException(ErrorCode.INVALID_TOKEN, "The refresh token has expired. Please sign in again");
         }
 
-        Role customerRole = roleRepository.findByName(RoleName.ROLE_CUSTOMER)
-                .orElseThrow(() -> new IllegalStateException("Role ROLE_CUSTOMER is not seeded"));
+        AccountView account = userAccountService.getActiveAccount(token.getUserId());
+        if (account.sessionVersion() != token.getSessionVersion()) {
+            token.setRevokedAt(now);
+            throw new BusinessException(ErrorCode.INVALID_TOKEN, "This session has ended. Please sign in again");
+        }
 
-        User user = new User();
-        user.setUsername(username);
-        user.setEmail(email);
-        user.setFullName(StringUtils.hasText(request.fullName()) ? request.fullName().trim() : null);
-        user.setPhone(StringUtils.hasText(request.phone()) ? request.phone().trim() : null);
-        user.setPassword(passwordEncoder.encode(request.password()));
-        user.setRoles(new HashSet<>(Set.of(customerRole)));
-        user.setEnabled(true);
-        userRepository.save(user);
-
-        auditService.log(AuditAction.CREATE, ENTITY, user.getId(), "Customer '" + username + "' signed up",
-                user.getId(), user.getUsername());
-        return userService.getById(user.getId());
+        token.setRevokedAt(now);
+        IssuedRefreshToken next = createRefreshToken(account, token.getFamilyId(), client);
+        token.setReplacedById(next.entity().getId());
+        return response(account, next);
     }
 
     @Override
     @Transactional
-    public void recordLogin(Long userId) {
-        User user = userRepository.findById(userId).orElseThrow(() -> new ResourceNotFoundException(ENTITY, userId));
-        user.setLastLoginAt(LocalDateTime.now());
-        auditService.log(AuditAction.LOGIN, ENTITY, user.getId(), "User signed in", user.getId(), user.getUsername());
-    }
-
-    @Override
-    @Transactional
-    public void recordLogout(Long userId, String username) {
-        auditService.log(AuditAction.LOGOUT, ENTITY, userId, "User signed out", userId, username);
-    }
-
-    @Override
-    @Transactional
-    public void changePassword(ChangePasswordRequest request) {
-        User user = currentUserEntity();
-        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) {
-            throw new BadRequestException("Current password is incorrect");
-        }
-        if (passwordEncoder.matches(request.newPassword(), user.getPassword())) {
-            throw new BadRequestException("New password must be different from the current password");
-        }
-        user.setPassword(passwordEncoder.encode(request.newPassword()));
-        user.incrementTokenVersion();
-        auditService.log(AuditAction.PASSWORD_CHANGE, ENTITY, user.getId(), "Password changed");
-    }
-
-    @Override
-    @Transactional
-    public void forgotPassword(ForgotPasswordRequest request) {
-        // Always behave the same whether or not the e-mail exists, to prevent account enumeration.
-        userRepository.findByEmailIgnoreCase(request.email().trim()).filter(User::isEnabled).ifPresent(user -> {
-            byte[] bytes = new byte[32];
-            RANDOM.nextBytes(bytes);
-            String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
-            long ttlMinutes = appProperties.passwordReset().tokenExpirationMinutes();
-
-            user.setPasswordResetTokenHash(sha256(token));
-            user.setPasswordResetExpiresAt(LocalDateTime.now().plusMinutes(ttlMinutes));
-
-            String link = appProperties.passwordReset().resetUrl() + "?token=" + token;
-            passwordResetNotifier.sendResetLink(user, link, ttlMinutes);
-            auditService.log(AuditAction.PASSWORD_RESET_REQUEST, ENTITY, user.getId(),
-                    "Password reset requested", user.getId(), user.getUsername());
+    public void logout(String refreshToken) {
+        refreshTokenRepository.findByTokenHashForUpdate(sha256(refreshToken)).ifPresent(token -> {
+            refreshTokenRepository.revokeFamily(token.getFamilyId(), clock.instant());
+            auditService.log(AuditAction.LOGOUT, ENTITY, token.getUserId(), "Signed out", token.getUserId(), null);
         });
     }
 
     @Override
     @Transactional
+    public void logoutEverywhere(Long userId) {
+        userAccountService.endAllSessions(userId); // invalidates every access token at once
+        refreshTokenRepository.revokeAllOfUser(userId, clock.instant());
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse changePassword(Long userId, ChangePasswordRequest request, ClientInfo client) {
+        AccountView account = userAccountService.changePassword(userId, request.currentPassword(), request.newPassword());
+        refreshTokenRepository.revokeAllOfUser(userId, clock.instant());
+        return issueTokens(account, UUID.randomUUID(), client);
+    }
+
+    @Override
+    @Transactional
+    public void forgotPassword(String email) {
+        String token = randomToken();
+        long ttlMinutes = appProperties.passwordReset().tokenExpirationMinutes();
+        userAccountService.storePasswordResetToken(email, sha256(token), LocalDateTime.now().plusMinutes(ttlMinutes))
+                .ifPresent(account -> passwordResetNotifier.sendResetLink(account.email(), account.username(),
+                        appProperties.passwordReset().resetUrl() + "?token=" + token, ttlMinutes));
+    }
+
+    @Override
+    @Transactional(noRollbackFor = BusinessException.class)
     public void resetPassword(ResetPasswordRequest request) {
-        User user = userRepository.findByPasswordResetTokenHash(sha256(request.token().trim()))
-                .orElseThrow(() -> new BadRequestException("Invalid or expired password reset token"));
-        if (user.getPasswordResetExpiresAt() == null || user.getPasswordResetExpiresAt().isBefore(LocalDateTime.now())) {
-            user.setPasswordResetTokenHash(null);
-            user.setPasswordResetExpiresAt(null);
-            throw new BadRequestException("Invalid or expired password reset token");
-        }
-        user.setPassword(passwordEncoder.encode(request.newPassword()));
-        user.setPasswordResetTokenHash(null);
-        user.setPasswordResetExpiresAt(null);
-        user.incrementTokenVersion();
-        auditService.log(AuditAction.PASSWORD_RESET, ENTITY, user.getId(), "Password reset with token",
-                user.getId(), user.getUsername());
+        AccountView account = userAccountService.resetPassword(sha256(request.token().trim()), request.newPassword());
+        refreshTokenRepository.revokeAllOfUser(account.id(), clock.instant());
     }
 
     @Override
     @Transactional(readOnly = true)
-    public UserResponse currentUser() {
-        return userService.getById(SecurityUtils.requirePrincipal().getId());
+    public UserResponse me(Long userId) {
+        return userService.getById(userId);
+    }
+
+    /** Expired refresh tokens are useless; keep them one more day for investigating reuse reports. */
+    @Scheduled(cron = "${app.jwt.cleanup-cron:0 30 3 * * *}")
+    @Transactional
+    public void deleteExpiredRefreshTokens() {
+        int deleted = refreshTokenRepository.deleteExpiredBefore(clock.instant().minus(Duration.ofDays(1)));
+        if (deleted > 0) {
+            log.info("Deleted {} expired refresh tokens", deleted);
+        }
     }
 
     // ------------------------------------------------------------------ helpers
 
-    private User currentUserEntity() {
-        Long id = SecurityUtils.requirePrincipal().getId();
-        return userRepository.findById(id).orElseThrow(() -> new ResourceNotFoundException(ENTITY, id));
+    private record IssuedRefreshToken(String value, RefreshToken entity) {
+    }
+
+    private AuthResponse issueTokens(AccountView account, UUID familyId, ClientInfo client) {
+        return response(account, createRefreshToken(account, familyId, client));
+    }
+
+    private AuthResponse response(AccountView account, IssuedRefreshToken refresh) {
+        JwtService.IssuedToken access = jwtService.issueAccessToken(account.id(), account.username(),
+                account.roles(), account.sessionVersion());
+        return new AuthResponse("Bearer", access.value(), access.expiresAt(), refresh.value(),
+                refresh.entity().getExpiresAt(), userService.getById(account.id()));
+    }
+
+    private IssuedRefreshToken createRefreshToken(AccountView account, UUID familyId, ClientInfo client) {
+        String value = randomToken();
+        RefreshToken token = new RefreshToken();
+        token.setUserId(account.id());
+        token.setTokenHash(sha256(value));
+        token.setFamilyId(familyId);
+        token.setSessionVersion(account.sessionVersion());
+        token.setExpiresAt(clock.instant().plus(appProperties.jwt().refreshTokenTtl()));
+        token.setCreatedIp(truncate(client.ipAddress(), 45));
+        token.setUserAgent(truncate(client.userAgent(), 255));
+        refreshTokenRepository.saveAndFlush(token);
+        return new IssuedRefreshToken(value, token);
+    }
+
+    /** 256 random bits, URL-safe. */
+    private static String randomToken() {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
     }
 
     static String sha256(String value) {
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            return HexFormat.of().formatHex(digest.digest(value.getBytes(StandardCharsets.UTF_8)));
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 not available", e);
         }
+    }
+
+    private static String truncate(String value, int max) {
+        return value == null || value.length() <= max ? value : value.substring(0, max);
     }
 }

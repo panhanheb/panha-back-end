@@ -86,6 +86,20 @@ springdoc:
 
 # ---------- Application ----------
 app:
+  jwt:
+    # Base64 HMAC key, at least 256 bits. Generate: openssl rand -base64 64. The default is for development only.
+    secret: ${JWT_SECRET:ZGV2LW9ubHktZWNvbW1lcmNlLWp3dC1zZWNyZXQtY2hhbmdlLW1lLWluLWV2ZXJ5LXJlYWwtZW52aXJvbm1lbnQ=}
+    issuer: ecommerce-backend
+    access-token-ttl: ${JWT_ACCESS_TOKEN_TTL:15m}
+    refresh-token-ttl: ${JWT_REFRESH_TOKEN_TTL:30d}
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    rules:
+      login: { limit: 10, window: 1m }
+      register: { limit: 5, window: 1m }
+      refresh: { limit: 30, window: 1m }
+      forgot-password: { limit: 3, window: 1m }
+      reset-password: { limit: 5, window: 1m }
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:5173,http://localhost:4200}
   shop:
@@ -138,6 +152,14 @@ spring:
 app:
   storage:
     create-bucket: false
+  # Tests sign in many times from the same address; the forgot-password limit stays real for the 429 test
+  rate-limit:
+    rules:
+      login: { limit: 1000, window: 1m }
+      register: { limit: 1000, window: 1m }
+      refresh: { limit: 1000, window: 1m }
+      forgot-password: { limit: 3, window: 1m }
+      reset-password: { limit: 1000, window: 1m }
 
 ---
 # Production: every secret must come from the environment (no defaults)
@@ -161,6 +183,8 @@ springdoc:
   swagger-ui:
     enabled: ${SWAGGER_ENABLED:false}
 app:
+  jwt:
+    secret: ${JWT_SECRET}
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS}
   storage:

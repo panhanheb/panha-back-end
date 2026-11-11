@@ -3,6 +3,7 @@ package com.example.ecommerce.support;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
@@ -25,5 +26,12 @@ public class TestcontainersConfiguration {
     @ServiceConnection(name = "redis")
     public GenericContainer<?> redis() {
         return new GenericContainer<>(DockerImageName.parse("redis:7.4-alpine")).withExposedPorts(6379);
+    }
+
+    /** Replaces the logging notifier so tests can read reset links (one shared context for all tests). */
+    @Bean
+    @Primary
+    public CapturingPasswordResetNotifier capturingPasswordResetNotifier() {
+        return new CapturingPasswordResetNotifier();
     }
 }

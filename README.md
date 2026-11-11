@@ -4,8 +4,8 @@ REST API (`/api/v1`) for a Flutter mobile app, a web storefront and an admin das
 modular monolith with Java 21, Spring Boot 4.1, PostgreSQL, Redis and S3 storage.
 
 **Status:** under construction, phase by phase. See [docs/DESIGN.md](docs/DESIGN.md) for the design, the
-ERD, the delivery plan and the report of each finished phase. Phase 2 (project setup) is complete; the
-business endpoints arrive from Phase 4 on.
+ERD, the delivery plan and the report of each finished phase. Phases 1, 2 and 4 are complete: setup and
+authentication ([Auth API](docs/api/auth.md)). Catalog, cart and order endpoints follow phase by phase.
 
 | | |
 |---|---|
@@ -127,7 +127,10 @@ All settings are in `application.yml` and can be overridden by environment varia
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | local keys | Storage credentials (AWS: leave empty to use the IAM role) |
 | `S3_PUBLIC_BASE_URL` | `http://localhost:9000/ecommerce-media` | Base URL clients use to load images |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:3000,5173,4200` | Browser origins of the web clients |
-| `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin` / `admin@shop.local` / `Admin@123` | Bootstrap administrator |
+| `JWT_SECRET` | dev key | **Base64 HMAC key, at least 256 bits** (`openssl rand -base64 64`); required in prod |
+| `JWT_ACCESS_TOKEN_TTL`, `JWT_REFRESH_TOKEN_TTL` | `15m`, `30d` | Token lifetimes |
+| `RATE_LIMIT_ENABLED` | `true` | Per-IP limits on the public auth endpoints |
+| `ADMIN_USERNAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` | `admin` / `admin@shop.local` / `Admin@123` | Bootstrap super administrator |
 | `SHOP_CURRENCY`, `SHOP_SHIPPING_FEE`, `SHOP_FREE_SHIPPING_THRESHOLD` | `USD`, `2.00`, `50.00` | Store settings |
 | `APP_TIMEZONE` | server zone | Store time zone, e.g. `Asia/Phnom_Penh` |
 | `SWAGGER_ENABLED` | on (dev), off (prod) | Expose Swagger UI in production |

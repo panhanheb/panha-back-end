@@ -20,8 +20,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ModularityTest {
 
-    /** Ratchet: lower it when a rewrite removes violations; never raise it. */
-    private static final int KNOWN_LEGACY_VIOLATIONS = 205;
+    /** Ratchet: lower it when a rewrite removes violations; never raise it. (Phase 2: 205, Phase 4: 147.) */
+    private static final int KNOWN_LEGACY_VIOLATIONS = 147;
+
+    /** Modules already rewritten to the boundary rules: they may not get any violation again. */
+    private static final List<String> CLEAN_MODULES = List.of("common", "modules.auth");
 
     private final ApplicationModules modules = ApplicationModules.of(EcommerceApplication.class);
 
@@ -34,11 +37,11 @@ class ModularityTest {
     }
 
     @Test
-    void commonDependsOnNoModule() {
-        List<String> commonViolations = modules.detectViolations().getMessages().stream()
-                .filter(v -> v.startsWith("Module 'common'"))
+    void rewrittenModulesHaveNoViolations() {
+        List<String> violations = modules.detectViolations().getMessages().stream()
+                .filter(v -> CLEAN_MODULES.stream().anyMatch(m -> v.startsWith("Module '" + m + "'")))
                 .toList();
-        assertThat(commonViolations).isEmpty();
+        assertThat(violations).isEmpty();
     }
 
     @Test

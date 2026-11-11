@@ -2,8 +2,8 @@ package com.example.ecommerce.modules.order;
 
 import com.example.ecommerce.common.exception.BusinessException;
 import com.example.ecommerce.common.exception.ErrorCode;
-import com.example.ecommerce.modules.auth.dto.RegisterRequest;
-import com.example.ecommerce.modules.auth.service.AuthService;
+import com.example.ecommerce.modules.user.service.UserAccountService;
+
 import com.example.ecommerce.modules.cart.dto.AddCartItemRequest;
 import com.example.ecommerce.modules.cart.service.CartService;
 import com.example.ecommerce.modules.category.dto.CategoryRequest;
@@ -40,7 +40,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @IntegrationTest
 class CheckoutOnPostgresIntegrationTest {
 
-    @Autowired private AuthService authService;
+    @Autowired private UserAccountService userAccountService;
     @Autowired private CategoryService categoryService;
     @Autowired private ProductService productService;
     @Autowired private CartService cartService;
@@ -61,7 +61,7 @@ class CheckoutOnPostgresIntegrationTest {
                 new BigDecimal("30.00"), 5, null, categoryId, true)).id();
 
         String customer = "buyer" + tag.toLowerCase();
-        authService.register(new RegisterRequest(customer, customer + "@mail.test", "Secret@123", "Sok Dara", null));
+        userAccountService.registerCustomer(customer, customer + "@mail.test", "Secret@123", "Sok Dara", null);
         signInAs(customer);
 
         cartService.addItem(new AddCartItemRequest(productId, 2));
@@ -96,7 +96,7 @@ class CheckoutOnPostgresIntegrationTest {
                 new BigDecimal("8.50"), 3, null, categoryId, true)).id();
 
         String customer = "late" + tag.toLowerCase();
-        authService.register(new RegisterRequest(customer, customer + "@mail.test", "Secret@123", null, null));
+        userAccountService.registerCustomer(customer, customer + "@mail.test", "Secret@123", null, null);
         signInAs(customer);
         cartService.addItem(new AddCartItemRequest(productId, 3));
 

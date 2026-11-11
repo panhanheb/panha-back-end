@@ -1,5 +1,6 @@
 package com.example.ecommerce.modules.auth.dto;
 
+import com.example.ecommerce.common.security.PasswordRules;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
