@@ -24,24 +24,6 @@ services:
     # For running the API from the IDE: localhost only, 5433 so it does not clash with a local PostgreSQL
     ports:
       - "127.0.0.1:5433:5432"
-
-  redis:
-    image: redis:7.4-alpine
-    container_name: ecommerce-redis
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:-redis-local}"]
-    volumes:
-      - redis-data:/data
-    healthcheck:
-      test: ["CMD-SHELL", "redis-cli -a $${REDIS_PASSWORD} ping | grep PONG"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:-redis-local}
-    ports:
-      - "127.0.0.1:6379:6379"
-
   # S3-compatible object storage for product images. AWS S3 replaces it in production.
   storage:
     image: rustfs/rustfs:1.0.3
@@ -58,8 +40,6 @@ services:
     # Port 9000 must be reachable by clients that load images (S3_PUBLIC_BASE_URL); 9001 is the web console
     ports:
       - "9000:9000"
-      - "9001:9001"
-
   api:
     build: .
     image: nhacg1
