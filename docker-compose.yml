@@ -1,10 +1,10 @@
-# Production-like stack: MySQL 8 + the API.
+# Production-like stack: MySQL 8 + the shop web application.
 #   cp .env.example .env   (then edit the values)
 #   docker compose up -d --build
 services:
   mysql:
     image: mysql:8.4
-    container_name: attendance-mysql
+    container_name: ecommerce-mysql
     restart: unless-stopped
     environment:
       MYSQL_DATABASE: ${DB_NAME}
@@ -26,9 +26,10 @@ services:
     # ports:
     #   - "3306:3306"
 
-  api:
+  web:
     build: .
-    container_name: attendance-api
+    image: nhacg1
+    container_name: nhacg1
     restart: unless-stopped
     depends_on:
       mysql:
@@ -43,17 +44,17 @@ services:
       DB_PASSWORD: ${DB_PASSWORD}
       DB_USE_SSL: "false"
       DB_ALLOW_PUBLIC_KEY_RETRIEVAL: "true"
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_ACCESS_EXPIRATION_MINUTES: ${JWT_ACCESS_EXPIRATION_MINUTES:-60}
-      JWT_REFRESH_EXPIRATION_DAYS: ${JWT_REFRESH_EXPIRATION_DAYS:-7}
       ADMIN_USERNAME: ${ADMIN_USERNAME}
       ADMIN_EMAIL: ${ADMIN_EMAIL}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL}
-      SWAGGER_ENABLED: ${SWAGGER_ENABLED:-false}
+      PASSWORD_RESET_URL: ${PASSWORD_RESET_URL:-http://localhost:8080/reset-password}
+      # The session cookie is HTTPS-only in prod. Keep false while the site is served over plain
+      # http://localhost; set true once it sits behind an HTTPS reverse proxy.
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
+      SHOP_CURRENCY: ${SHOP_CURRENCY:-USD}
+      SHOP_SHIPPING_FEE: ${SHOP_SHIPPING_FEE:-2.00}
+      SHOP_FREE_SHIPPING_THRESHOLD: ${SHOP_FREE_SHIPPING_THRESHOLD:-50.00}
     ports:
       - "8080:8080"
-
 volumes:
   mysql-data:
