@@ -688,6 +688,7 @@ Then I stop for your review before the next phase.
 | D3 | Single shop or marketplace with independent sellers | **Decided: marketplace-ready.** Sellers own products and see only their order lines. Orders are not split into sub-orders until it is needed. |
 | D4 | Real payment provider for Phase 10 | Open until Phase 10. Options: Stripe (international cards) or ABA PayWay / Bakong KHQR (local Cambodian payments). The simulated gateway is built first in either case. |
 | D5 | MySQL support | **Dropped:** PostgreSQL only, as in the brief. Flyway scripts and full-text search are PostgreSQL-specific. |
+| D6 | Package layout | **Decided (after Phase 4): layered Spring MVC** (`controller`, `service`, `repository`, `model`, `dto`, ...) instead of one package per module. Section 3 describes the original modular plan; module boundaries are no longer enforced by a test (Spring Modulith removed), so keeping services independent is now a code-review rule. |
 
 ---
 

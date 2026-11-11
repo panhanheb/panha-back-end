@@ -1,6 +1,6 @@
 package com.example.ecommerce.support;
 
-import com.example.ecommerce.modules.auth.service.PasswordResetNotifier;
+import com.example.ecommerce.service.PasswordResetNotifier;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;

@@ -55,9 +55,6 @@ spring:
   jackson:
     time-zone: UTC
 
-  modulith:
-    detection-strategy: com.example.ecommerce.common.config.ModuleDetection
-
 server:
   port: ${SERVER_PORT:8080}
   error:

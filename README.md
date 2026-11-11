@@ -1,7 +1,7 @@
 # E-Commerce Backend API
 
 REST API (`/api/v1`) for a Flutter mobile app, a web storefront and an admin dashboard. It is built as a
-modular monolith with Java 21, Spring Boot 4.1, PostgreSQL, Redis and S3 storage.
+layered Spring MVC application with Java 21, Spring Boot 4.1, PostgreSQL, Redis and S3 storage.
 
 **Status:** under construction, phase by phase. See [docs/DESIGN.md](docs/DESIGN.md) for the design, the
 ERD, the delivery plan and the report of each finished phase. Phases 1, 2 and 4 are complete: setup and
@@ -11,7 +11,7 @@ authentication ([Auth API](docs/api/auth.md)). Catalog, cart and order endpoints
 |---|---|
 | **Stack** | Java 21, Spring Boot 4.1 (Web MVC, Data JPA, Security, Validation, Actuator, Cache), Maven wrapper |
 | **Data** | PostgreSQL 17 with Flyway migrations, Redis 7.4, S3-compatible storage (AWS S3 / RustFS) |
-| **Quality** | JUnit 5, Mockito, Testcontainers, Spring Modulith boundary checks |
+| **Quality** | JUnit 5, Mockito, Testcontainers |
 | **Docs** | Swagger UI at `/swagger-ui.html`, OpenAPI JSON at `/v3/api-docs` |
 
 ---
@@ -64,7 +64,6 @@ Docker must be running. The integration tests start real PostgreSQL and Redis co
 |------|--------|
 | `PlatformIntegrationTest` | Flyway + schema validation, seed data, health, OpenAPI, JSON error envelope, CORS, Redis cache, money format |
 | `CheckoutOnPostgresIntegrationTest` | Checkout with row locks, stock reservation and return, payment, error codes |
-| `ModularityTest` | Module detection, `common` independent of modules, no new boundary violations; writes module diagrams to `target/spring-modulith-docs` |
 
 ---
 
@@ -91,26 +90,32 @@ Every response has the same envelope:
 
 ---
 
-## Project structure
+## Project structure (layered Spring MVC)
 
 ```
 src/main/java/com/example/ecommerce
 ├── EcommerceApplication.java
-├── common/                 Shared kernel (may not depend on any module)
-│   ├── config/             AppProperties, Jackson, OpenAPI, Redis cache, S3 storage, request logging, module detection
-│   ├── exception/          ErrorCode, BusinessException (+ BadRequest, Conflict, ResourceNotFound), GlobalExceptionHandler
-│   ├── response/           ApiResponse, ApiError, PageResponse
-│   ├── security/           SecurityConfig, UserPrincipal, RoleName, SecurityUtils, PasswordConfig
-│   └── persistence/        BaseEntity (id, created_at, updated_at)
-└── modules/                One package per module; only service/ and dto/ are visible to other modules
-    ├── auth/  user/  customer/
-    ├── category/  product/  inventory/
-    ├── cart/  order/  payment/  promotion/  delivery/
-    └── audit/
+├── controller/      REST controllers (/api/v1/...): validate input, call one service, wrap the result in ApiResponse
+├── service/         Business logic interfaces (AuthService, UserAccountService, OrderService, ...)
+│   └── impl/        Their implementations; transactions live here
+├── repository/      Spring Data JPA repositories (+ ProductSpecifications for dynamic search)
+├── model/           JPA entities (User, Role, Product, Order, RefreshToken, ...) and BaseEntity
+│   └── enums/       RoleName, OrderStatus, PaymentMethod, PaymentStatus, AuditAction
+├── dto/
+│   ├── request/     Request bodies with Bean Validation rules
+│   └── response/    Response records, ApiResponse / ApiError envelope, PageResponse
+├── mapper/          Entity -> response DTO
+├── security/        SecurityConfig, JWT service and filter, rate limiting, UserPrincipal
+├── config/          AppProperties, Jackson, OpenAPI, Redis cache, S3 storage, request logging, data seeding
+├── exception/       ErrorCode, business exceptions, GlobalExceptionHandler
+└── util/            Shared constants (password rules, cart limits)
 src/main/resources
-├── application.yml         Profiles: dev (default), test, prod
-└── db/migration/           Flyway scripts (V1__baseline.sql, ...)
+├── application.yml  Profiles: dev (default), test, prod
+└── db/migration/    Flyway scripts (V1__baseline.sql, V2__refresh_tokens.sql, ...)
 ```
+
+Request flow: `controller` → `service` → `repository` → database; entities (`model`) never leave the
+service layer, controllers only see `dto` records.
 
 ---
 
