@@ -13,7 +13,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.common.security.RoleName;
 
 import java.time.LocalDateTime;
 import java.util.HashSet;

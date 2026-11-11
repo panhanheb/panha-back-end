@@ -7,10 +7,11 @@ import com.example.ecommerce.modules.product.dto.StockUpdateRequest;
 import com.example.ecommerce.common.response.PageResponse;
 import com.example.ecommerce.modules.category.entity.Category;
 import com.example.ecommerce.modules.product.entity.Product;
-import com.example.ecommerce.modules.audit.entity.AuditAction;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.modules.audit.service.AuditAction;
+import com.example.ecommerce.common.security.RoleName;
 import com.example.ecommerce.common.exception.BadRequestException;
 import com.example.ecommerce.common.exception.ConflictException;
+import com.example.ecommerce.common.exception.ErrorCode;
 import com.example.ecommerce.common.exception.ResourceNotFoundException;
 import com.example.ecommerce.modules.product.mapper.ProductMapper;
 import com.example.ecommerce.modules.cart.repository.CartItemRepository;
@@ -138,7 +139,7 @@ public class ProductServiceImpl implements ProductService {
                 ? productRepository.existsBySkuIgnoreCase(normalized)
                 : productRepository.existsBySkuIgnoreCaseAndIdNot(normalized, id);
         if (taken) {
-            throw new ConflictException("SKU '" + normalized.toUpperCase() + "' already exists");
+            throw new ConflictException(ErrorCode.DUPLICATE_RESOURCE, "SKU '" + normalized.toUpperCase() + "' already exists");
         }
     }
 

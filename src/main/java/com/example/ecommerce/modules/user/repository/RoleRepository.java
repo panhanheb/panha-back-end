@@ -1,7 +1,7 @@
 package com.example.ecommerce.modules.user.repository;
 
 import com.example.ecommerce.modules.user.entity.Role;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.common.security.RoleName;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

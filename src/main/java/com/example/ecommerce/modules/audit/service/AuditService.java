@@ -2,7 +2,6 @@ package com.example.ecommerce.modules.audit.service;
 
 import com.example.ecommerce.modules.audit.dto.AuditLogResponse;
 import com.example.ecommerce.common.response.PageResponse;
-import com.example.ecommerce.modules.audit.entity.AuditAction;
 import org.springframework.data.domain.Pageable;
 
 /**

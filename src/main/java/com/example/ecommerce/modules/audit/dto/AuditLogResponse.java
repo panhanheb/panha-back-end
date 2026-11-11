@@ -1,6 +1,6 @@
 package com.example.ecommerce.modules.audit.dto;
 
-import com.example.ecommerce.modules.audit.entity.AuditAction;
+import com.example.ecommerce.modules.audit.service.AuditAction;
 
 import java.time.LocalDateTime;
 

@@ -1,7 +1,7 @@
 package com.example.ecommerce.modules.user.dto;
 
 import jakarta.validation.constraints.NotEmpty;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.common.security.RoleName;
 
 import java.util.Set;
 

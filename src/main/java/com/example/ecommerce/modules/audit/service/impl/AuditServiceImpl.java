@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import com.example.ecommerce.modules.audit.dto.AuditLogResponse;
 import com.example.ecommerce.common.response.PageResponse;
 import com.example.ecommerce.modules.audit.entity.AuditLog;
-import com.example.ecommerce.modules.audit.entity.AuditAction;
+import com.example.ecommerce.modules.audit.service.AuditAction;
 import com.example.ecommerce.modules.audit.repository.AuditLogRepository;
 import com.example.ecommerce.common.security.SecurityUtils;
 import com.example.ecommerce.common.security.UserPrincipal;

@@ -12,7 +12,7 @@ import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import com.example.ecommerce.modules.audit.entity.AuditAction;
+import com.example.ecommerce.modules.audit.service.AuditAction;
 import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;

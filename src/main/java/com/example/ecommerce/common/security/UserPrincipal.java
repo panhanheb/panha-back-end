@@ -1,8 +1,6 @@
 package com.example.ecommerce.common.security;
 
 import lombok.Getter;
-import com.example.ecommerce.modules.user.entity.User;
-import com.example.ecommerce.modules.user.entity.RoleName;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -11,7 +9,8 @@ import java.util.Collection;
 import java.util.List;
 
 /**
- * Spring Security view of a {@link User}. Immutable snapshot taken when the request is authenticated.
+ * The authenticated user as every module sees it. An immutable snapshot built by the user module; it
+ * deliberately does not reference the {@code User} entity, so {@code common} stays independent of modules.
  */
 @Getter
 public class UserPrincipal implements UserDetails {
@@ -20,17 +19,19 @@ public class UserPrincipal implements UserDetails {
     private final String username;
     private final String password;
     private final boolean enabled;
+    /** Session/token version of the account when this principal was built (see users.token_version). */
     private final int tokenVersion;
     private final List<GrantedAuthority> authorities;
 
-    public UserPrincipal(User user) {
-        this.id = user.getId();
-        this.username = user.getUsername();
-        this.password = user.getPassword();
-        this.enabled = user.isEnabled();
-        this.tokenVersion = user.getTokenVersion();
-        this.authorities = user.getRoles().stream()
-                .map(r -> (GrantedAuthority) new SimpleGrantedAuthority(r.getName().name()))
+    public UserPrincipal(Long id, String username, String password, boolean enabled, int tokenVersion,
+                         Collection<RoleName> roles) {
+        this.id = id;
+        this.username = username;
+        this.password = password;
+        this.enabled = enabled;
+        this.tokenVersion = tokenVersion;
+        this.authorities = roles.stream()
+                .map(r -> (GrantedAuthority) new SimpleGrantedAuthority(r.name()))
                 .toList();
     }
 

@@ -1,6 +1,6 @@
 package com.example.ecommerce.common.security;
 
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.common.security.RoleName;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 

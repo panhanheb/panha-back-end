@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
-# E-Commerce Shop (Spring MVC + Thymeleaf) - multi-stage build
+# E-Commerce API - multi-stage build
 #   docker build -t nhacg1 .
-#   docker run -d --name nhacg1 -p 8080:8080 nhacg1
-#   docker compose up -d --build        (web app + MySQL, see docker-compose.yml)
+#   docker run needs PostgreSQL and Redis; prefer docker compose
+#   docker compose up -d --build        (API + PostgreSQL + Redis + storage, see docker-compose.yml)
 
 # ---------- 1. Build ----------
 FROM eclipse-temurin:21-jdk-alpine AS build

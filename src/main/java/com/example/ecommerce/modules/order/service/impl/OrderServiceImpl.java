@@ -12,13 +12,14 @@ import com.example.ecommerce.modules.cart.entity.CartItem;
 import com.example.ecommerce.modules.order.entity.Order;
 import com.example.ecommerce.modules.order.entity.OrderItem;
 import com.example.ecommerce.modules.product.entity.Product;
-import com.example.ecommerce.modules.audit.entity.AuditAction;
+import com.example.ecommerce.modules.audit.service.AuditAction;
 import com.example.ecommerce.modules.order.entity.OrderStatus;
 import com.example.ecommerce.modules.order.entity.PaymentMethod;
 import com.example.ecommerce.modules.order.entity.PaymentStatus;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.common.security.RoleName;
 import com.example.ecommerce.common.exception.BadRequestException;
 import com.example.ecommerce.common.exception.ConflictException;
+import com.example.ecommerce.common.exception.ErrorCode;
 import com.example.ecommerce.common.exception.ResourceNotFoundException;
 import com.example.ecommerce.modules.order.mapper.OrderMapper;
 import com.example.ecommerce.modules.cart.repository.CartItemRepository;
@@ -95,7 +96,7 @@ public class OrderServiceImpl implements OrderService {
             }
         }
         if (!problems.isEmpty()) {
-            throw new ConflictException("Some items in your cart cannot be ordered; update your cart and try again",
+            throw new ConflictException(ErrorCode.INSUFFICIENT_STOCK, "Some items in your cart cannot be ordered; update your cart and try again",
                     problems);
         }
 
@@ -149,7 +150,7 @@ public class OrderServiceImpl implements OrderService {
             throw new ResourceNotFoundException(ENTITY, orderId);
         }
         if (order.getStatus() != OrderStatus.PENDING) {
-            throw new ConflictException("Order " + order.getOrderNumber() + " is " + order.getStatus()
+            throw new ConflictException(ErrorCode.INVALID_ORDER_TRANSITION, "Order " + order.getOrderNumber() + " is " + order.getStatus()
                     + " and cannot be paid");
         }
         if (order.getPaymentMethod() == PaymentMethod.CASH_ON_DELIVERY) {
@@ -163,7 +164,7 @@ public class OrderServiceImpl implements OrderService {
             if (PaymentRequest.DECLINED_TEST_CARD.equals(cardNumber)) {
                 auditService.log(AuditAction.UPDATE, ENTITY, orderId,
                         "Simulated card payment declined for " + order.getOrderNumber());
-                throw new BadRequestException("Payment declined by the card issuer (simulated)");
+                throw new BadRequestException(ErrorCode.PAYMENT_DECLINED, "Payment declined by the card issuer (simulated)");
             }
         }
 
@@ -286,7 +287,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private static ConflictException invalidTransition(Order order, OrderStatus target, String reason) {
-        return new ConflictException("Order " + order.getOrderNumber() + " cannot change from "
+        return new ConflictException(ErrorCode.INVALID_ORDER_TRANSITION, "Order " + order.getOrderNumber() + " cannot change from "
                 + order.getStatus() + " to " + target + (reason == null ? "" : " because " + reason));
     }
 

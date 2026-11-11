@@ -5,10 +5,11 @@ import com.example.ecommerce.modules.category.dto.CategoryRequest;
 import com.example.ecommerce.modules.category.dto.CategoryResponse;
 import com.example.ecommerce.common.response.PageResponse;
 import com.example.ecommerce.modules.category.entity.Category;
-import com.example.ecommerce.modules.audit.entity.AuditAction;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.modules.audit.service.AuditAction;
+import com.example.ecommerce.common.security.RoleName;
 import com.example.ecommerce.common.exception.BadRequestException;
 import com.example.ecommerce.common.exception.ConflictException;
+import com.example.ecommerce.common.exception.ErrorCode;
 import com.example.ecommerce.common.exception.ResourceNotFoundException;
 import com.example.ecommerce.modules.category.mapper.CategoryMapper;
 import com.example.ecommerce.modules.category.repository.CategoryRepository;
@@ -92,7 +93,7 @@ public class CategoryServiceImpl implements CategoryService {
                 ? categoryRepository.existsByNameIgnoreCase(name)
                 : categoryRepository.existsByNameIgnoreCaseAndIdNot(name, id);
         if (nameTaken) {
-            throw new ConflictException("Category '" + name + "' already exists");
+            throw new ConflictException(ErrorCode.DUPLICATE_RESOURCE, "Category '" + name + "' already exists");
         }
         String slug = StringUtils.hasText(request.slug()) ? request.slug().trim() : slugify(name);
         if (slug.isEmpty()) {
@@ -102,7 +103,7 @@ public class CategoryServiceImpl implements CategoryService {
                 ? categoryRepository.existsBySlug(slug)
                 : categoryRepository.existsBySlugAndIdNot(slug, id);
         if (slugTaken) {
-            throw new ConflictException("Category slug '" + slug + "' already exists");
+            throw new ConflictException(ErrorCode.DUPLICATE_RESOURCE, "Category slug '" + slug + "' already exists");
         }
         category.setName(name);
         category.setSlug(slug);

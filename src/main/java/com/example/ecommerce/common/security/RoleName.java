@@ -1,4 +1,4 @@
-package com.example.ecommerce.modules.user.entity;
+package com.example.ecommerce.common.security;
 
 /** Security roles. Stored in the roles table with the ROLE_ prefix expected by Spring Security. */
 public enum RoleName {

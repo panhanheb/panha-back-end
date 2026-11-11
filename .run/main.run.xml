@@ -1,8 +1,8 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="main" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="dev" />
     <module name="panha-back-end" />
-    <option name="SPRING_BOOT_MAIN_CLASS" value="org.example.panhabackend.PanhaBackEndApplication" />
-    <option name="ACTIVE_PROFILES" value="dev,postgres" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.example.ecommerce.EcommerceApplication" />
     <method v="2">
       <option name="Make" enabled="true" />
     </method>

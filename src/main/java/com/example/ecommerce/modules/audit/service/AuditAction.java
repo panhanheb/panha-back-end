@@ -1,4 +1,4 @@
-package com.example.ecommerce.modules.audit.entity;
+package com.example.ecommerce.modules.audit.service;
 
 public enum AuditAction {
     CREATE,

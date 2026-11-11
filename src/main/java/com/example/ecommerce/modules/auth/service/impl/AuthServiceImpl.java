@@ -10,10 +10,11 @@ import com.example.ecommerce.modules.auth.dto.ResetPasswordRequest;
 import com.example.ecommerce.modules.user.dto.UserResponse;
 import com.example.ecommerce.modules.user.entity.Role;
 import com.example.ecommerce.modules.user.entity.User;
-import com.example.ecommerce.modules.audit.entity.AuditAction;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.modules.audit.service.AuditAction;
+import com.example.ecommerce.common.security.RoleName;
 import com.example.ecommerce.common.exception.BadRequestException;
 import com.example.ecommerce.common.exception.ConflictException;
+import com.example.ecommerce.common.exception.ErrorCode;
 import com.example.ecommerce.common.exception.ResourceNotFoundException;
 import com.example.ecommerce.modules.user.repository.RoleRepository;
 import com.example.ecommerce.modules.user.repository.UserRepository;
@@ -59,10 +60,10 @@ public class AuthServiceImpl implements AuthService {
         String username = request.username().trim();
         String email = request.email().trim().toLowerCase();
         if (userRepository.existsByUsername(username)) {
-            throw new ConflictException("Username '" + username + "' is already taken");
+            throw new ConflictException(ErrorCode.DUPLICATE_RESOURCE, "Username '" + username + "' is already taken");
         }
         if (userRepository.existsByEmailIgnoreCase(email)) {
-            throw new ConflictException("Email '" + email + "' is already registered");
+            throw new ConflictException(ErrorCode.DUPLICATE_RESOURCE, "Email '" + email + "' is already registered");
         }
 
         Role customerRole = roleRepository.findByName(RoleName.ROLE_CUSTOMER)

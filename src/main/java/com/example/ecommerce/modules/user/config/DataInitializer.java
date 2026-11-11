@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.example.ecommerce.modules.user.entity.Role;
 import com.example.ecommerce.modules.user.entity.User;
-import com.example.ecommerce.modules.user.entity.RoleName;
+import com.example.ecommerce.common.security.RoleName;
 import com.example.ecommerce.modules.user.repository.RoleRepository;
 import com.example.ecommerce.modules.user.repository.UserRepository;
 import org.springframework.boot.ApplicationArguments;

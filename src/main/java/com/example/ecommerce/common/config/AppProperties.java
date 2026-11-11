@@ -42,7 +42,8 @@ public record AppProperties(@Valid @NotNull Cors cors,
      *
      * @param endpoint      leave empty for AWS S3; set to the MinIO URL locally
      * @param publicBaseUrl base URL clients use to load stored files
-     * @param pathStyle     true for MinIO (bucket in the path instead of the host name)
+     * @param pathStyle     true for local S3-compatible servers (bucket in the path instead of the host name)
+     * @param createBucket  create the bucket on startup when it is missing (local and Docker Compose only)
      */
     public record Storage(@NotBlank String bucket,
                           @NotBlank String region,
@@ -50,7 +51,8 @@ public record AppProperties(@Valid @NotNull Cors cors,
                           String accessKey,
                           String secretKey,
                           @NotBlank String publicBaseUrl,
-                          boolean pathStyle) {
+                          boolean pathStyle,
+                          boolean createBucket) {
     }
 
     /**
